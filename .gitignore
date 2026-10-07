@@ -1,0 +1,33 @@
+# Python environments and generated files
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local tools, caches, and notebook checkpoints
+.cache/
+.tools/
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+.DS_Store
+
+# Credentials and machine-specific settings
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+
+# Keep experiment inputs and generated outputs outside Git
+data/
+results/
+outputs/
+logs/
+*.log

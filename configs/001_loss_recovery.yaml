@@ -1,0 +1,114 @@
+# Parameters are modeling assumptions, not measurements of a particular NIC.
+schema_version: 1
+seeds: [11, 29, 47, 71, 101]
+transport_defaults:
+  bandwidth_gbps: 400.0
+  payload_bytes: 4096
+  overhead_bytes: 128
+  ack_bytes: 96
+  ack_every: 4
+  ack_delay_us: 0.5
+  window_bdp: 8.0
+  max_window_packets: 32640
+  rtt_us: 10.0
+  data_loss: 0.05
+  ack_loss: 0.05
+  path_count: 4
+  path_spread_us: 2.0
+  early_factor: 1.5
+  rto_factor: 4.0
+
+experiments:
+  - id: scaleout_32m
+    group: main
+    workload: ring_allreduce
+    size_mib: 32
+    ranks: 8
+    sweep: {protocol: [gbn, uet], data_loss: [0.0, 0.05]}
+  - id: scaleout_256m
+    group: main
+    workload: ring_allreduce
+    size_mib: 256
+    ranks: 8
+    sweep: {protocol: [gbn, uet], data_loss: [0.0, 0.05]}
+  - id: scaleout_1g
+    group: main
+    workload: ring_allreduce
+    size_mib: 1024
+    ranks: 8
+    sweep: {protocol: [gbn, uet], data_loss: [0.0, 0.05]}
+  - id: metro_32m
+    group: main
+    workload: ring_allreduce
+    size_mib: 32
+    ranks: 8
+    transport: {rtt_us: 100.0}
+    sweep: {protocol: [gbn, uet], data_loss: [0.0, 0.05]}
+  - id: wan_32m
+    group: main
+    workload: ring_allreduce
+    size_mib: 32
+    ranks: 8
+    transport: {rtt_us: 1000.0}
+    sweep: {protocol: [gbn, uet], data_loss: [0.0, 0.05]}
+
+  - id: bulk_loss_sweep
+    group: loss_sweep
+    workload: bulk
+    size_mib: 32
+    sweep: {protocol: [gbn, uet], data_loss: [0.0, 0.001, 0.01, 0.05, 0.1]}
+  - id: bulk_window
+    group: window
+    workload: bulk
+    size_mib: 128
+    transport: {protocol: uet}
+    sweep: {window_bdp: [1.0, 2.0, 4.0, 8.0, 16.0]}
+  - id: fault_fast
+    group: recovery
+    workload: bulk
+    size_mib: 32
+    transport: {protocol: uet}
+  - id: fault_rto
+    group: recovery
+    workload: bulk
+    size_mib: 32
+    transport: {protocol: uet, early_recovery: false}
+  - id: trim_fast
+    group: recovery
+    workload: bulk
+    size_mib: 32
+    ack_loss_tracks_data: false
+    transport: {protocol: uet, data_loss: 0.0, ack_loss: 0.05, trim_probability: 0.05}
+  - id: burst_fast
+    group: recovery
+    workload: bulk
+    size_mib: 32
+    transport: {protocol: uet, loss_model: burst, burst_length: 8.0}
+  - id: bulk_mtu
+    group: mtu
+    workload: bulk
+    size_mib: 32
+    transport: {protocol: uet}
+    sweep: {payload_bytes: [1024, 2048, 4096]}
+  - id: wan_fixed_window
+    group: wan_window
+    workload: bulk
+    size_mib: 128
+    transport: {protocol: uet, rtt_us: 1000.0}
+    sweep: {window_packets: [512, 8192, 32640]}
+  - id: wan_large_bulk
+    group: wan_window
+    workload: bulk
+    size_mib: 1024
+    transport: {protocol: uet, rtt_us: 1000.0, window_packets: 32640}
+  - id: control_reliable
+    group: controls
+    workload: bulk
+    size_mib: 128
+    ack_loss_tracks_data: false
+    transport: {protocol: uet, ack_loss: 0.0}
+  - id: no_spraying
+    group: controls
+    workload: bulk
+    size_mib: 128
+    transport: {protocol: uet, path_count: 1, path_spread_us: 0.0}

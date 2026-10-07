@@ -1,0 +1,19 @@
+{
+  "python": "3.10.19 (main, Feb 12 2026, 00:36:33) [Clang 21.1.4 ]",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "source_sha256": "96d31294aa0c1d49da344f9687952f0d030a95f8f32e6cf6f3c14ff58f126b70",
+  "jobs": 192,
+  "workers": 4,
+  "wall_seconds_this_run": 218.9060407500001,
+  "metric": "AllReduce: [2(N-1)/N * S * 8 / completion_time] / link_rate; bulk: [S*8/T]/link_rate",
+  "confidence_intervals": "95% Student-t intervals across independent seeded trials; simulation uncertainty only",
+  "config_file": "configs/001_loss_recovery.yaml",
+  "seeds": [
+    11,
+    29,
+    47,
+    71,
+    101
+  ],
+  "validation": "30 pytest tests passed under Python 3.10.19"
+}
