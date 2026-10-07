@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "source_sha256": "b3907d0974e94fb25df648a8bed00e04314bce07aced35e27b7aec45fab1580d",
+  "jobs": 36,
+  "flows": 3512,
+  "unique_packets": 83542016,
+  "data_transmissions": 87879134,
+  "ack_transmissions": 23905352,
+  "events": 524846740,
+  "acceptance": {
+    "status": "PASS",
+    "target_pct": 90,
+    "trials": 10,
+    "mean_goodput_pct": 90.68501598367861,
+    "ci95_half_width": 0.013141762390667808,
+    "ci95_lower_pct": 90.67187422128794,
+    "minimum_goodput_pct": 90.65559324266734,
+    "criterion": "10+ frozen-policy trials: mean 95% Student-t CI lower bound AND every trial >= target"
+  },
+  "checks": [
+    "exact frozen job coverage",
+    "model/config hashes",
+    "independent seed namespace",
+    "every packet received and acknowledged",
+    "persistent collective phase clock",
+    "data and ACK byte conservation",
+    "shared per-NIC TX/RX budget",
+    "bounded ingress buffers",
+    "bounded PSN span",
+    "Goodput/algorithm/bus definitions",
+    "CSV recomputation",
+    "frozen acceptance rule"
+  ]
+}

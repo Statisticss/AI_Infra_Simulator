@@ -1,0 +1,174 @@
+{
+  "study": "004_datacenter_90pct",
+  "source_sha256": "b3907d0974e94fb25df648a8bed00e04314bce07aced35e27b7aec45fab1580d",
+  "source_files": {
+    "src/ai_infra_simulator/transport.py": "92c03d73ecd171ce10b50403317eaef021a11ba06e75040e7b16c1830b5603cb",
+    "src/ai_infra_simulator/advanced_transport.py": "92d8f0f207eee3ad76bb3e27461f5be85e0efdbe50450e3f9b41d83d0842992f",
+    "src/ai_infra_simulator/datacenter.py": "e081e15e91eca862b8480f30610a38593d48cca1f17f1daa7c4eacbda20a733a",
+    "src/ai_infra_simulator/experiments/datacenter_study.py": "6cd4e87a84aa9fbaa1e2b3d7656794036a63e2c2a4242a7050881e1d3f1cf4ae",
+    "run_datacenter_study.py": "439230acc9b4cc8eaeb0fa5dcb8514d2a58bdb08a5b9b71590f5a3f596b28523",
+    "uv.lock": "28d31ac29e6f7e4753dcf201f9e7cbf861844b5d2ab237d9b758c34836ef0b40"
+  },
+  "config_sha256": "56e9d41293440778c9123e472e72d75d3ee53c6c7f630ba4fe8f8c7b992f9b54",
+  "document": {
+    "study": "004_datacenter_90pct",
+    "pilot_seeds": [
+      3
+    ],
+    "seeds": [
+      11,
+      29,
+      47,
+      71,
+      101,
+      131,
+      173,
+      211,
+      257,
+      307
+    ],
+    "target_pct": 90,
+    "ranks": 8,
+    "queue_capacity_bytes": 262144,
+    "transport": {
+      "protocol": "uet",
+      "bandwidth_gbps": 400,
+      "rtt_us": 10,
+      "payload_bytes": 4096,
+      "overhead_bytes": 128,
+      "ack_bytes": 96,
+      "ack_every": 4,
+      "ack_delay_us": 0.5,
+      "window_bdp": 8,
+      "path_count": 4,
+      "path_spread_us": 2,
+      "data_loss": 0.05,
+      "ack_loss": 0.05,
+      "loss_model": "iid",
+      "trim_probability": 0,
+      "early_factor": 1.1,
+      "rto_factor": 1.25
+    },
+    "policy": {
+      "name": "coverage",
+      "closure_copies": 2,
+      "tail_copies": 3,
+      "tail_packets": 32640
+    },
+    "experiments": [
+      {
+        "id": "acceptance",
+        "workload": "ring_allreduce",
+        "size_mib": 1024,
+        "seed_count": 10
+      },
+      {
+        "id": "lossless_reference",
+        "workload": "ring_allreduce",
+        "size_mib": 1024,
+        "seed_count": 1,
+        "transport": {
+          "data_loss": 0,
+          "ack_loss": 0
+        }
+      },
+      {
+        "id": "baseline_recovery",
+        "workload": "ring_allreduce",
+        "size_mib": 1024,
+        "seed_count": 5,
+        "transport": {
+          "early_factor": 1.5,
+          "rto_factor": 4
+        },
+        "policy": {
+          "name": "baseline"
+        }
+      },
+      {
+        "id": "medium_tensor",
+        "workload": "ring_allreduce",
+        "size_mib": 256,
+        "seed_count": 5
+      },
+      {
+        "id": "small_tensor",
+        "workload": "ring_allreduce",
+        "size_mib": 32,
+        "seed_count": 5
+      },
+      {
+        "id": "higher_rtt",
+        "workload": "ring_allreduce",
+        "size_mib": 1024,
+        "seed_count": 5,
+        "transport": {
+          "rtt_us": 50
+        }
+      },
+      {
+        "id": "permutation",
+        "workload": "permutation",
+        "size_mib": 128,
+        "seed_count": 5
+      }
+    ]
+  },
+  "selected_job_ids": [
+    "0294560a054b70a0a3f9",
+    "07a8c89f62f36ae465ea",
+    "0a985be21de2163315ff",
+    "0f74994fee8df9a1a19a",
+    "11b899cf0061124de886",
+    "14af47a1f75c513c6cf8",
+    "1eff18e68399dbb2e733",
+    "29b60bc3975483dfd93f",
+    "2a6bf0c802d18f3b8910",
+    "2b2c3e1f57ae7140272d",
+    "2b92f0c3793cf1666fc3",
+    "341480ee059ccec5753c",
+    "46506124cf1236df27d1",
+    "4bad630e4803759a51f2",
+    "5945dae82df40d22294f",
+    "5b679377651ac91361be",
+    "62fadc2b99c0093439e1",
+    "66ee51032c85cf1acbf7",
+    "6d709a46e7de86080fe1",
+    "76d8febdb44104aadb48",
+    "784f8c21dc35c0e8b5a5",
+    "7b5487d283ddff9388d4",
+    "879363a29df93a4bf095",
+    "98fc883d7abbda888391",
+    "a1cae407ac0745be40b6",
+    "be357a404725b4382418",
+    "c136716f83d9264d7e3b",
+    "c6306f230591be712a21",
+    "c72db980e03629788a85",
+    "e1a9459c22c5545b2451",
+    "e21b0b87c7a1c5053270",
+    "e2fc546e7c7d7a711fb3",
+    "e7f23330005e7e2b283f",
+    "f0170555fbbe940ae59c",
+    "f612c5905f2d9a200b3b",
+    "fe69e7bb838ac8067362"
+  ],
+  "python": "3.10.19",
+  "frozen_at": "2026-10-07T13:28:54.930733+00:00",
+  "git_head": "f59f05cea8a29a989ef97dec4e5cdf818a603dca",
+  "worktree_dirty": true,
+  "jobs": 36,
+  "reused": 0,
+  "wall_seconds": 354.36555570800556,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "finished_at": "2026-10-07T13:34:49.309439+00:00",
+  "acceptance": {
+    "status": "PASS",
+    "target_pct": 90,
+    "trials": 10,
+    "mean_goodput_pct": 90.68501598367861,
+    "ci95_half_width": 0.013141762390667808,
+    "ci95_lower_pct": 90.67187422128794,
+    "minimum_goodput_pct": 90.65559324266734,
+    "criterion": "10+ frozen-policy trials: mean 95% Student-t CI lower bound AND every trial >= target"
+  }
+}

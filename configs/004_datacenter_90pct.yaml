@@ -1,0 +1,63 @@
+# Frozen after a pilot on seed 3; no evaluation seed participates in selection.
+study: 004_datacenter_90pct
+pilot_seeds: [3]
+seeds: [11, 29, 47, 71, 101, 131, 173, 211, 257, 307]
+target_pct: 90
+ranks: 8
+queue_capacity_bytes: 262144
+transport:
+  protocol: uet
+  bandwidth_gbps: 400
+  rtt_us: 10
+  payload_bytes: 4096
+  overhead_bytes: 128
+  ack_bytes: 96
+  ack_every: 4
+  ack_delay_us: 0.5
+  window_bdp: 8
+  path_count: 4
+  path_spread_us: 2
+  data_loss: 0.05
+  ack_loss: 0.05
+  loss_model: iid
+  trim_probability: 0
+  early_factor: 1.1
+  rto_factor: 1.25
+policy:
+  name: coverage
+  closure_copies: 2
+  tail_copies: 3
+  tail_packets: 32640
+experiments:
+  - id: acceptance
+    workload: ring_allreduce
+    size_mib: 1024
+    seed_count: 10
+  - id: lossless_reference
+    workload: ring_allreduce
+    size_mib: 1024
+    seed_count: 1
+    transport: {data_loss: 0, ack_loss: 0}
+  - id: baseline_recovery
+    workload: ring_allreduce
+    size_mib: 1024
+    seed_count: 5
+    transport: {early_factor: 1.5, rto_factor: 4}
+    policy: {name: baseline}
+  - id: medium_tensor
+    workload: ring_allreduce
+    size_mib: 256
+    seed_count: 5
+  - id: small_tensor
+    workload: ring_allreduce
+    size_mib: 32
+    seed_count: 5
+  - id: higher_rtt
+    workload: ring_allreduce
+    size_mib: 1024
+    seed_count: 5
+    transport: {rtt_us: 50}
+  - id: permutation
+    workload: permutation
+    size_mib: 128
+    seed_count: 5

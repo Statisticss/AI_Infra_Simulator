@@ -14,6 +14,18 @@ Scale-across（长距离 RDMA），以及 PCIe、CXL 等总线传输。
 | 001 | 5% 故障丢包下，GBN 与选择性重传的 Goodput 差别有多大？能否达到 90%？ | 分组级传输 + 分步 Ring AllReduce；192 个任务、5 个有损随机种子，结果和参数已保存 |
 | 002 | 根据 CIPU 2.0 的公开方向设计可达 90% 的候选策略 | 重叠 SACK、区间反馈、尾部冗余；Bulk 与 8 rank Ring，详见独立报告 |
 | 003 | RTT 1–10 ms 下不同丢包率的性能与优化 | 共享 400 Gbit/s 端口的多个 PDC、2 GiB 窗口预算、独立选参与评估、资源消融 |
+| 004 | 在合理数据中心场景中，严格按物理 NIC 预算达到 5% 丢包 / 90% Goodput | 全部 rank 共用事件时钟，数据和 ACK 共享实际 NIC 收发端口；36 次试验及完整压缩账本 |
+
+**[实验 004：5% 丢包下超过 90% Goodput](reports/004_datacenter_90pct/REPORT.md)** ·
+[场景、协议及指标定义](reports/004_datacenter_90pct/METHOD.md)
+
+最新结果：8 rank、每 rank 1 GiB、400 Gbit/s、10 us RTT 的 Ring AllReduce 通信模型中，
+数据和 ACK 都独立丢失 5% 时，候选策略的完整操作 Goodput 为 **90.685% ± 0.013 个百分点（95% CI）**。
+10 次独立试验最低为 **90.656%**，对应平均网络带宽 **362.74 Gbit/s/rank**。
+计入全部报文开销、反馈、重传、尾部副本和最终确认等待，按 AllReduce bus bandwidth / 端口速率定义。
+这是大块、短 RTT、非阻塞 fabric 场景的仿真；256 MiB/rank、32 MiB/rank 和 50 us RTT 对照均未达到 90%。
+
+![实验 004：正式种子及边界](reports/004_datacenter_90pct/figures/goodput.png)
 
 **[实验 002：CIPU 启发策略](reports/002_cipu_inspired/REPORT.md)** ·
 [CIPU 公开资料分析](reports/002_cipu_inspired/RESEARCH.md) ·
@@ -24,12 +36,11 @@ Scale-across（长距离 RDMA），以及 PCIe、CXL 等总线传输。
 [模型假设与原始依据](reports/001_loss_recovery/METHOD.md) ·
 [全部配置](configs/001_loss_recovery.yaml)
 
-代表性结果：8 rank、每 rank 1 GiB、400 Gbit/s、10 us RTT、数据及反馈均独立丢失 5% 时，
+实验 001 的原机制对照：8 rank、每 rank 1 GiB、400 Gbit/s、10 us RTT、数据及反馈均独立丢失 5% 时，
 传统 RC/GBN 模型的 Goodput 为 **12.95%**，UET RUD 风格机制模型为 **90.55%**。
 这是指定参数下的机制仿真结果，**不是完整 UET 实现、CIPU 实测或对真实 NCCL 系统的性能承诺**。
 报告同时展示小消息、长 RTT、窗口、RTO、Trim 和包长的敏感性。
-
-![实验 001 AllReduce 结果](reports/001_loss_recovery/figures/allreduce.png)
+001–003 的精确源码及结果保留在提交 `f59f05c`；004 补齐了多端点的数据/ACK 共享物理 NIC 模型。
 
 ## 安装与运行
 
@@ -80,6 +91,22 @@ python scripts/build_recovery_reports.py
 `--resume` 只复用严格匹配的检查点。完整批量实验可能需数分钟至数十分钟，取决于机器与并发。
 小型汇总、置信区间、全部候选得分和 PNG/SVG 科研图随代码保存。
 
+实验 004 固定参数后执行 10 次主场景验证及 26 次对照，本机完整运行约 6 分钟：
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python run_datacenter_study.py --workers 4
+python scripts/verify_datacenter_results.py
+python scripts/build_datacenter_report.py
+```
+
+原始结果默认写入 `../results/004_datacenter_90pct/`。加 `--resume` 可恢复严格匹配的运行；
+单场景可用 `--groups acceptance --output ../results/004_acceptance_only`。
+报告目录附带约 324 KiB 的全部 trial 压缩账本，下载后可直接审计而无需再运行仿真：
+
+```bash
+python scripts/verify_datacenter_results.py --input reports/004_datacenter_90pct
+```
+
 Notebook 使用：
 
 ```bash
@@ -94,15 +121,20 @@ src/ai_infra_simulator/
   transport.py                       # 传输、故障、反馈、重传、事件内核
   collectives.py                     # 通信量和 Ring 步骤依赖
   advanced_transport.py              # 共享端口、多 PDC、反馈与尾部候选策略
+  datacenter.py                      # 多端点共享时钟、真实 NIC TX/RX、持续 collective 阶段
   experiments/loss_recovery.py        # 批量运行、统计、绘图
   experiments/recovery_study.py       # 002/003 选参、独立评估及逐流保存
+  experiments/datacenter_study.py     # 004 冻结场景、独立种子与统计验收
 tests/                               # 解析边界与协议状态验证
 scripts/build_loss_report.py         # 从结果生成报告
 scripts/build_recovery_reports.py    # 002/003 报告与科学图
 scripts/verify_recovery_results.py   # 完整任务集、来源、字节及状态预算核验
+scripts/build_datacenter_report.py   # 004 报告、容量预算图及原始账本归档
+scripts/verify_datacenter_results.py # 004 逐连接/端口守恒及压缩归档核验
 reports/001_loss_recovery/            # 可分享的报告、统计表与图
 run_experiment.py                    # 无需安装本项目包的入口
 run_recovery_study.py                # 002/003 入口
+run_datacenter_study.py              # 004 入口
 pyproject.toml / uv.lock             # Python 3.10 环境与依赖
 ```
 
