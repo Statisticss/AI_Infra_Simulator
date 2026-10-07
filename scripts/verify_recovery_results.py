@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Audit exact job coverage, provenance and conservation of completed studies."""
+# 实验 002/003 审计入口：覆盖训练与验证任务、逐流状态和共享端口资源预算。
+# 原始报告对应 f59f05c；新增中文注释后需用匹配源码审计，或在新目录重新运行。
 from pathlib import Path
 import json
 import math
@@ -20,11 +22,13 @@ def verify(name):
     selection = json.loads((output / "selection.json").read_text()) if "tuning" in document else None
     jobs = expand_jobs(document, "eval", selection)
     if selection:
+        # 用训练结果重新选择策略，并检查正式评估种子从未参与选参。
         jobs += expand_jobs(document, "tune")
         computed = choose_policy(pd.read_csv(output / "tuning_trials.csv"), document)
         assert (computed["window_bdp"], computed["tail_copies"]) == (selection["window_bdp"], selection["tail_copies"])
         assert not set(selection["training_seeds"]) & set(selection["evaluation_seeds"])
     saved = {p.stem: json.loads(p.read_text()) for p in (output / "jobs").glob("*.json")}
+    # 精确比较任务集，缺少任何任务或混入别的配置均不能通过。
     assert set(saved) == {j["job_id"] for j in jobs}, "Missing or unexpected trials"
     code_hash = source_hash()
     total_flows = total_transmissions = 0
@@ -37,6 +41,7 @@ def verify(name):
         steps = 1 if rank_count == 1 else 2 * (rank_count - 1)
         assert len(flows) == rank_count * steps
         duration = sum(max(f["duration_ns"] for f in flows if f["step"] == step) for step in range(steps))
+        # 每步取最慢 rank，再累加全部步骤；不能用流平均时间高估 collective 性能。
         assert math.isclose(metrics["duration_ms"] * 1e6, duration)
         total_flows += len(flows)
         total_transmissions += metrics["data_transmissions"]

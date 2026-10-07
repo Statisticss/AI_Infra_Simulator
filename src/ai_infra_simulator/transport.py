@@ -5,6 +5,9 @@ The forward and feedback directions each have a finite-rate serializer.
 There are no switch queues, congestion drops, PFC, or congestion controllers.
 """
 
+# 分组级传输底座：对比按序接收的 GBN 与允许乱序的选择性重传。
+# 内核统一使用 ns；输入 RTT 使用 us，链路速率使用 Gbit/s。
+# 本文件将正向数据和反向反馈分别序列化；实验 004 在子类中接入共享物理 NIC。
 from __future__ import annotations
 
 from collections import deque
@@ -17,6 +20,8 @@ from typing import Callable
 
 @dataclass(frozen=True)
 class TransportConfig:
+    # 参数对象不可变，便于多个试验共享配置而不意外改变彼此的协议行为。
+    # overhead_bytes 是统一的线速开销预算，不代表某个协议的精确头部长度。
     protocol: str = "uet"
     bandwidth_gbps: float = 400.0
     rtt_us: float = 10.0  # propagation + fixed NIC processing, excluding serialization
@@ -25,14 +30,17 @@ class TransportConfig:
     ack_bytes: int = 96
     ack_every: int = 4
     ack_delay_us: float = 0.5
+    # BDP 是带宽与 RTT 的乘积；window_packets 可显式覆盖按 BDP 推导的窗口。
     window_bdp: float = 4.0
     window_packets: int | None = None
     max_window_packets: int = 32640
+    # 数据故障、反馈故障和 Trim 分开注入；重传包同样经历数据故障过程。
     data_loss: float = 0.05
     ack_loss: float = 0.05
     loss_model: str = "iid"
     burst_length: float = 8.0
     trim_probability: float = 0.0  # conditional on surviving physical loss
+    # 多路径只引入确定性的逐包喷洒和传播时延差，不额外增加端口带宽。
     path_count: int = 4
     path_spread_us: float = 2.0  # total spread of one-way propagation times
     early_recovery: bool = True
@@ -44,6 +52,7 @@ class TransportConfig:
     max_time_s: float = 3600.0
 
     def __post_init__(self):
+        # 先验证概率、时间、包数等输入，避免无效参数生成貌似合理的结果。
         if self.protocol not in {"gbn", "uet"}:
             raise ValueError("protocol must be gbn or uet")
         if self.loss_model not in {"iid", "burst"}:
@@ -76,6 +85,7 @@ class TransportConfig:
     def window(self) -> int:
         if self.window_packets is not None:
             return self.window_packets
+        # 一个在途包包含 payload 和线速开销；向上取整后再受单连接跨度上限约束。
         bdp_packets = self.bandwidth_gbps * self.rtt_us * 1000 / (8 * (self.payload_bytes + self.overhead_bytes))
         return min(self.max_window_packets, max(1, math.ceil(self.window_bdp * bdp_packets)))
 
@@ -85,6 +95,7 @@ class TransportConfig:
 
     @property
     def early_ns(self) -> float:
+        # 早期重传的等待必须覆盖路径差和 ACK 合并等待，避免把正常乱序当作丢包。
         # Only positive ACK evidence plus an elapsed guard may trigger early retransmission.
         return max(self.rtt_us * self.early_factor,
                    self.rtt_us + self.path_spread_us + self.ack_delay_us) * 1000
@@ -98,6 +109,8 @@ class PacketLoss:
     """
 
     def __init__(self, probability: float, seed: int, mode: str = "iid", burst_length: float = 8.0):
+        # 突发模型以“发送尝试次数”为步长；它不等价于持续若干微秒的链路中断。
+        # 两个转移概率使稳态坏状态比例等于指定丢包率。
         self.p = probability
         self.rng = random.Random(seed)
         self.mode = mode
@@ -120,6 +133,8 @@ class PacketLoss:
 
 @dataclass
 class FlowResult:
+    # duration_ns 包含发送端最终确认；receiver_complete_ns 仅表示接收端收齐。
+    # 唯一有效字节与实际线速字节分别保存，计算 Goodput 时不能把重传加入分子。
     duration_ns: float
     receiver_complete_ns: float
     payload_bytes: int
@@ -170,10 +185,13 @@ class PacketSimulation:
         self.ack_free = 0.0
         self.tx_pending = False
         self.next_seq = 0
+        # 三种边界不能混用：base 是本地正确认前缀，cack 是接收方报告的连续前缀，
+        # expected 是接收端实际缺少的第一个 PSN；边界均采用右端不包含的表示。
         self.high_sent = 0  # exclusive
         self.base = 0  # first packet not positively acknowledged by sender
         self.cack = 0  # receiver cumulative ACK reported to sender, exclusive
         self.expected = 0  # first missing at receiver
+        # 第 i 位对应 PSN=i。接收位图和发送端已知位图分开，避免发送端预知丢包。
         self.rx_bits = 0
         self.ack_bits = 0
         self.rx_count = 0
@@ -183,6 +201,7 @@ class PacketSimulation:
         self.highest_ack = -1
         self.acked_count = 0
         self.attempt = [0] * self.n
+        # 每包尝试序号用于识别过期定时器；新一次发送不能被上一次的超时事件误伤。
         self.sent_at = [0.0] * self.n
         self.rto_backoff = [0] * self.n
         self.retx_queue: deque[int] = deque()
@@ -198,6 +217,7 @@ class PacketSimulation:
         self.last_recovery_time = -math.inf
         self.gbn_timer_generation = 0
         self.data_loss = PacketLoss(config.data_loss, seed * 17 + 1, config.loss_model, config.burst_length)
+        # 数据与 ACK 使用不同随机流；测试钩子只用于信道注入，不传给恢复算法。
         self.ack_loss = PacketLoss(config.ack_loss, seed * 17 + 2)
         self.trim_rng = random.Random(seed * 17 + 3)
         self.data_drop_hook = data_drop_hook
@@ -214,10 +234,12 @@ class PacketSimulation:
             self.trace.append({"time_ns": self.now if when is None else when, "event": kind, "seq": seq})
 
     def schedule(self, when: float, callback, *args):
+        # 递增序号为同一时刻的事件确定稳定次序，保证固定种子的结果可复现。
         self.order += 1
         heapq.heappush(self.events, (when, self.order, callback, args))
 
     def wake_tx(self):
+        # 同一连接最多挂起一个发送事件，避免多个 ACK 同时唤醒导致重复占用链路。
         if not self.tx_pending and not self.complete:
             self.tx_pending = True
             self.schedule(max(self.now, self.tx_free), self.send)
@@ -235,6 +257,7 @@ class PacketSimulation:
                 return
             self.next_seq = seq + 1
         else:
+            # 优先修复仍未被确认的包；队列中已被后来 ACK 覆盖的项可以直接跳过。
             while self.retx_queue and self.is_acked(self.retx_queue[0]):
                 self.retx_queued.discard(self.retx_queue.popleft())
             if self.retx_queue:
@@ -242,6 +265,7 @@ class PacketSimulation:
                 self.retx_queued.discard(seq)
             else:
                 seq = self.next_seq
+                # 限制的是从 CACK 开始的 PSN 跨度，不能只数未确认包而无限向前发送。
                 # Bound the PSN SPAN, not merely the number of unacknowledged packets.
                 if seq >= self.n or seq >= self.cack + self.window:
                     return
@@ -252,6 +276,7 @@ class PacketSimulation:
         self.sent_at[seq] = self.now
         self.stats["data_transmissions"] += 1
         self.stats["retransmissions"] += int(attempt > 1)
+        # 包括尾部不足一个 payload 的情况；所有发送尝试先支付完整线速字节。
         length = min(self.c.payload_bytes, self.size - seq * self.c.payload_bytes)
         wire = length + self.c.overhead_bytes
         self.stats["forward_wire_bytes"] += wire
@@ -263,6 +288,7 @@ class PacketSimulation:
         else:
             offset = 0.0
         arrival = self.tx_free + self.c.rtt_us * 500 + offset
+        # 先判定物理擦除，只有存活的数据帧才有机会被 Trim；擦除不产生免费通知。
         dropped = self.data_drop_hook(seq, attempt) if self.data_drop_hook else self.data_loss.drop()
         if dropped:
             self.stats["physical_drops"] += 1
@@ -280,6 +306,7 @@ class PacketSimulation:
         else:
             self.schedule(arrival, self.receive_data, seq, attempt)
         if self.c.protocol == "uet":
+            # 定时器随每次尝试生成；回调会核对尝试序号及 ACK 状态后再决定恢复。
             if self.c.early_recovery:
                 self.schedule(self.now + self.c.early_ns, self.early_timeout, seq, attempt)
             self.schedule(self.now + self.c.rto_ns * (2 ** min(self.rto_backoff[seq], 3)),
@@ -295,6 +322,7 @@ class PacketSimulation:
     def receive_data(self, seq: int, attempt: int, arrival: float | None = None):
         when = self.now if arrival is None else arrival
         if self.c.protocol == "gbn":
+            # 传统按序接收丢弃缺口之后的有效包，因而一次丢包可能引起后缀重传。
             if seq > self.expected:
                 self.stats["out_of_order_discards"] += 1
                 self.log("ooo_discard", seq, when)
@@ -310,6 +338,7 @@ class PacketSimulation:
             self.expected += 1
             self.rx_count += 1
         else:
+            # 选择性接收保留乱序包；重复到达只触发反馈，不重复累加有效载荷。
             bit = 1 << seq
             if self.rx_bits & bit:
                 self.stats["duplicate_deliveries"] += 1
@@ -318,6 +347,7 @@ class PacketSimulation:
             self.rx_bits |= bit
             self.rx_count += 1
             self.max_seen = max(self.max_seen, seq)
+            # 位运算求最低连续 1 的个数，也就是接收端第一个缺口的位置。
             # Count trailing one bits: all lower PSNs have arrived.
             self.expected = (self.rx_bits ^ (self.rx_bits + 1)).bit_length() - 1
             self.max_ooo = max(self.max_ooo, self.rx_count - self.expected)
@@ -330,6 +360,7 @@ class PacketSimulation:
             self.rx_complete = when
         self.ack_count += 1
         self.ack_trigger = seq
+        # 平时合并 ACK；尾包、重传及全部收齐时立即反馈，缩短操作收尾时间。
         if self.ack_count >= self.c.ack_every or seq == self.n - 1 or attempt > 1 or self.rx_count == self.n:
             self.send_feedback(when, seq)
         elif self.c.protocol == "uet" and self.ack_count == 1:
@@ -341,10 +372,13 @@ class PacketSimulation:
             self.send_feedback(when, seq)
 
     def delayed_ack(self, generation: int):
+        # 已有即时 ACK 发出后，旧的合并计时器应失效，避免额外重复控制包。
         if generation == self.ack_timer_generation and self.ack_count:
             self.send_feedback(self.now, self.ack_trigger)
 
     def send_feedback(self, when: float, trigger: int, nack: int | None = None):
+        # CACK 确认连续前缀，ACK_PSN 确认触发包，64 位 SACK 补充乱序接收信息。
+        # 反馈本身需要序列化且可能丢失；接收端收齐不意味着发送端已经知道。
         self.ack_timer_generation += 1
         self.ack_count = 0
         cack = 0 if self.c.protocol == "uet" and nack is not None else self.expected
@@ -380,6 +414,7 @@ class PacketSimulation:
                 new_bits |= 1 << ack_psn
             new_bits |= bitmap << sack_base
         newly_acked = new_bits & ~self.ack_bits
+        # 只合并正确认；旧 ACK 的零位不撤销新 ACK 已确认的包。
         self.ack_bits |= new_bits  # zero bits MUST NOT clear previous SACK knowledge
         self.acked_count += newly_acked.bit_count()
         if newly_acked:
@@ -410,10 +445,12 @@ class PacketSimulation:
             self.wake_tx()
 
     def early_timeout(self, seq: int, attempt: int):
+        # 有更高 PSN 的正确认、等待已到期、当前包仍未确认，才能触发早期修复。
         if not self.is_acked(seq) and self.attempt[seq] == attempt and self.highest_ack > seq:
             self.queue_retransmission(seq, "early_retransmissions")
 
     def uet_timeout(self, seq: int, attempt: int):
+        # 尾包可能没有后续 ACK 作为证据，必须保留超时兜底和有限指数退避。
         if not self.is_acked(seq) and self.attempt[seq] == attempt:
             self.rto_backoff[seq] += 1
             self.queue_retransmission(seq, "timeout_retransmissions")
@@ -431,6 +468,7 @@ class PacketSimulation:
             self.wake_tx()
 
     def run(self) -> FlowResult:
+        # 按事件时间推进到发送端最终确认；超出预算时显式报错，不输出部分 Goodput。
         self.wake_tx()
         while self.events and not self.complete:
             when, _, callback, args = heapq.heappop(self.events)

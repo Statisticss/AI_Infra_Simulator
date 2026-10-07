@@ -1,3 +1,4 @@
+# Collective 验证：Ring 两阶段的总流量、最慢 rank 屏障及 bus/algo 带宽换算。
 from dataclasses import replace
 
 import pytest
@@ -25,6 +26,7 @@ def test_ring_lossy_step_waits_for_slowest_rank():
 
 
 class UncoalescedGBN(PacketSimulation):
+    # 用逐包显式事件作为对照，检查 GBN 事件合并优化不改变协议结果。
     """Reference implementation with an explicit event for every packet arrival."""
     def receive_data(self, seq, attempt, arrival=None):
         if arrival is not None:

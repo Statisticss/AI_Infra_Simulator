@@ -1,3 +1,4 @@
+# 004 验收验证：正式种子与试跑隔离，且均值置信下界和最低样本都必须达标。
 import copy
 
 import pandas as pd

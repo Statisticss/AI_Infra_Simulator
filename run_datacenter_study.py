@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run study 004 using Python 3.10."""
+# 实验 004 入口；共享物理 NIC 的模型和统计验收由 experiments/datacenter_study.py 负责。
 from pathlib import Path
 import sys
 

@@ -1,4 +1,5 @@
 """Experiments 002/003: auditable strategy search and held-out evaluation."""
+# 实验 002/003：将端点恢复策略、窗口/PDC 资源及 RTT/丢包率组合展开为可复现任务。
 from __future__ import annotations
 
 import argparse
@@ -30,11 +31,13 @@ COUNTERS = ("packets", "data_transmissions", "retransmissions", "physical_drops"
 
 
 def search_hash(document):
+    # 选参结果绑定训练矩阵、传输参数和资源预算，不能拿旧搜索结果套新场景。
     return hashlib.sha256(json.dumps({k: document[k] for k in ("tuning", "transport", "resources")},
                                      sort_keys=True).encode()).hexdigest()
 
 
 def strategy(document, name, rtt, loss, selection=None, overrides=None):
+    # 根据实验名选择基线、只扩窗口、只改恢复或二者联合；数据和 ACK 默认同丢包率。
     cfg = dict(document["transport"])
     cfg.update(rtt_us=rtt, data_loss=loss, ack_loss=loss)
     cfg.update(overrides or {})
@@ -60,6 +63,7 @@ def add_job(jobs, document, group, name, workload, size, rtt, loss, seed,
                pdcs=pdcs, total_window_packets=budget,
                search_window_bdp=selection["window_bdp"] if selection else 8,
                tail_copies=policy.tail_copies)
+    # condition_id 聚合同参数的随机样本；job_id 还包括种子，用来唯一标识检查点。
     job["condition_id"] = hashlib.sha256(json.dumps({k: v for k, v in job.items() if k != "seed"},
                                                    sort_keys=True).encode()).hexdigest()[:16]
     job["job_id"] = hashlib.sha256(json.dumps(job, sort_keys=True).encode()).hexdigest()[:16]
@@ -67,6 +71,7 @@ def add_job(jobs, document, group, name, workload, size, rtt, loss, seed,
 
 
 def expand_jobs(document, phase, selection=None):
+    # tune 只展开训练种子；eval 使用冻结策略和独立评估种子，避免验证数据泄漏。
     jobs = []
     if phase == "tune":
         tuning = document["tuning"]
@@ -88,6 +93,7 @@ def expand_jobs(document, phase, selection=None):
 
 
 def run_job(job):
+    # 本版逐流模拟，再逐阶段取最慢完成时间；多端点持续时钟模型另见实验 004。
     started = perf_counter()
     c, policy = TransportConfig(**job["transport"]), RecoveryPolicy(**job["policy"])
     ranks = 1 if job["workload"] == "bulk" else job["ranks"]
@@ -113,6 +119,7 @@ def run_job(job):
     duration = sum(phases)
     counters = {k: sum(f[k] for f in flows) for k in COUNTERS}
     goodput = chunk * steps * 8 / duration / c.bandwidth_gbps * 100
+    # reference 只是理想流体参考；报告中的实测 Goodput 来自上面的分组事件结果。
     wire = chunk + ((chunk + c.payload_bytes - 1) // c.payload_bytes) * c.overhead_bytes
     reference = chunk * 8 / (wire * 8 / (c.bandwidth_gbps * (1-c.data_loss)) + c.rtt_us * 1000)
     metrics = dict(duration_ms=duration / 1e6, goodput_pct=goodput,
@@ -132,6 +139,7 @@ def run_job(job):
 
 
 def summarize(results):
+    # 各计数器先保留每个种子的原值，再计算跨种子均值和 Student-t 置信区间。
     rows = []
     for result in results:
         job = result["job"]
@@ -162,6 +170,8 @@ def summarize(results):
 
 
 def choose_policy(trials, document):
+    # 用训练场景 Goodput 的几何均值排序；差距在 1% 内时优先省内存、少副本。
+    # 此函数只接收训练结果，不读取评估种子表现。
     # Primary objective: geometric mean full-transfer goodput across training
     # scenarios/seeds. Within 1% of the best, prefer less provisioned memory,
     # then fewer proactive tail copies. Evaluation seeds are never read here.
@@ -201,6 +211,7 @@ def main(argv=None):
     selected_file = args.output / "selection.json"
     code_hash = source_hash()
     if args.phase == "eval" and "tuning" in document:
+        # 003 必须先 tune；源码或搜索配置变化后，旧 selection.json 会被拒绝。
         selection = json.loads(selected_file.read_text())
         if selection["source_sha256"] != code_hash or selection["search_config_sha256"] != search_hash(document):
             raise SystemExit("Model or search configuration changed after tuning; rerun tuning")
@@ -214,6 +225,7 @@ def main(argv=None):
     results, pending = [], []
     for job in jobs:
         checkpoint = checkpoints / (job["job_id"] + ".json")
+        # 检查点校验按源码原始字节执行，因此只改注释也需要独立结果目录。
         if args.resume and checkpoint.exists():
             saved = json.loads(checkpoint.read_text())
             if saved["source_sha256"] != code_hash or saved["job"] != job:

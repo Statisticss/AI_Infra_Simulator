@@ -1,3 +1,4 @@
+# 002/003 实验编排验证：训练/评估隔离、逻辑流计量和资源优先的选参规则。
 from pathlib import Path
 
 import pandas as pd

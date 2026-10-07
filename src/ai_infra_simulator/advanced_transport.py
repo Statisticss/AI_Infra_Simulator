@@ -6,6 +6,9 @@ and NOT a complete UET implementation.  A PDC always has a bounded PSN span;
 adding PDCs buys state, never additional port bandwidth.
 """
 
+# 实验 002/003 的端点恢复扩展：覆盖式反馈、尾部副本和共享端口的多个 PDC。
+# PDC 可理解为维护各自序号与恢复状态的逻辑连接；增加 PDC 只增加状态，不增加带宽。
+# 这里的策略是研究候选，不是 CIPU 私有算法的逆向实现。
 from __future__ import annotations
 
 from collections import deque
@@ -20,6 +23,8 @@ from .transport import PacketSimulation, TransportConfig
 
 @dataclass(frozen=True)
 class RecoveryPolicy:
+    # baseline 沿用底座恢复；coverage 启用重叠反馈、区间补充反馈及尾部副本。
+    # tail_copies 表示每轮尾部修复的总副本数，包含该轮第一次重传。
     name: str = "coverage"
     closure_copies: int = 2
     tail_copies: int = 2
@@ -34,6 +39,7 @@ class RecoveryPolicy:
 
 
 def pdc_seed(flow_seed: int, index: int) -> int:
+    # 不同 rank/PDC 必须使用不同随机流，不能复用简单步长而使两条流碰巧同种子。
     # Preserve the original one-PDC stream. Additional PDCs use a separate hash
     # namespace: adding rank_stride again would alias rank 0/PDC 1 and rank 1/PDC 0.
     if index == 0:
@@ -45,6 +51,8 @@ class SharedPort:
     """An exact packet serializer and a fair, work-conserving PDC arbiter."""
 
     def __init__(self):
+        # 所有连接共用时钟和一个 TX serializer；反向反馈仍独立序列化。
+        # 实验 004 的 Fabric/NIC 进一步把本端数据和对端 ACK 放进同一物理队列。
         self.now = self.tx_free = self.ack_free = 0.0
         self.events = []
         self.order = self.event_count = 0
@@ -61,6 +69,7 @@ class SharedPort:
         heapq.heappush(self.events, (when, self.order, callback, args))
 
     def request_tx(self, conn):
+        # 就绪连接按队列轮转；每条连接只登记一次，防止高频 ACK 破坏公平调度。
         if not conn.tx_pending and not conn.complete:
             conn.tx_pending = True
             self.ready.append(conn)
@@ -72,6 +81,7 @@ class SharedPort:
             self.schedule(max(self.now, self.tx_free), self.send)
 
     def send(self):
+        # 每轮只给一个连接一个包的发送机会，再由它登记下一次发送需求。
         self.tx_pending = False
         conn = self.ready.popleft()
         conn.tx_pending = False
@@ -79,6 +89,7 @@ class SharedPort:
         self.arm_tx()
 
     def run(self, config):
+        # 同时启动全部连接，在共享时间轴上等待所有连接最终确认。
         for conn in self.connections:
             conn.wake_tx()
         while self.events and self.completed < len(self.connections):
@@ -93,6 +104,7 @@ class SharedPort:
 
 class PortConnection(PacketSimulation):
     def __init__(self, port, policy, *args, **kwargs):
+        # 复用分组状态机，只把事件调度、发送资源及附加恢复策略接到共享端口。
         self.port, self.policy = port, policy
         super().__init__(*args, **kwargs)
         self.last_sent = -1
@@ -105,6 +117,7 @@ class PortConnection(PacketSimulation):
 
     @property
     def now(self):
+        # 属性转发保证每个连接看到同一端口时钟，而不是各自维护一份独立时间。
         return self.port.now
 
     @now.setter
@@ -144,6 +157,8 @@ class PortConnection(PacketSimulation):
         if self.policy.name == "baseline" or self.stats["data_transmissions"] == before:
             return
         seq = self.last_sent
+        # 仅在原始包发完、剩余未确认包位于尾部阈值内时，对“需要重传”的包加副本。
+        # 每个副本仍经过父类发送流程，因此占带宽、可能丢失、并更新超时尝试序号。
         remaining = self.tail_copy_left.get(seq, 0)
         if remaining:
             # This copy and every other copy pay serialization and can be lost.
@@ -166,6 +181,8 @@ class PortConnection(PacketSimulation):
         self.port.max_ooo_packets = max(self.port.max_ooo_packets, self.port.ooo_packets)
         if self.policy.name == "baseline":
             return
+        # 看见后续区间后，等待乱序保护时间，再重复报告之前 64 包区间的正确认。
+        # 这提高丢 ACK 时的覆盖概率，但没有把缺失位直接解释成已丢失的数据包。
         # Ordinary ACKs overlap the preceding 56 PSNs. Once a higher block
         # arrives, explicitly repeat the earlier block after the reordering guard.
         # This is positive SACK coverage, not an oracle declaring zero bits lost.
@@ -180,6 +197,7 @@ class PortConnection(PacketSimulation):
             self.closed_through = last_closed
 
     def closure_ack(self, sack_base):
+        # 已完成连接不再新生成补充反馈；已排入物理发送队列的反馈另由端口处理。
         if self.complete:
             return
         self.closure_ack_transmissions += 1
@@ -196,6 +214,7 @@ class PortConnection(PacketSimulation):
         self.ack_count = 0
         # Old blocks are already represented by CACK. Avoid unbounded negative
         # offsets when a delayed closure ACK outlives a cumulative advance.
+        # CACK 前缀已经覆盖的旧区间无需重复用 SACK 表示，避免偏移越过字段范围。
         sack_base = max(sack_base, self.expected // 64 * 64)
         offset = sack_base - self.expected
         if not -32768 <= offset <= 32767:
@@ -239,12 +258,14 @@ def simulate_port(config: TransportConfig, size_bytes: int, seed: int = 1,
     packets = math.ceil(size_bytes / config.payload_bytes)
     if not isinstance(pdcs, int) or pdcs < 1 or pdcs > packets:
         raise ValueError("pdcs must be between one and the message packet count")
+    # 聚合窗口按连接拆分；每个连接的跨度都必须落在当前模型的编码范围内。
     budget = total_window_packets if total_window_packets is not None else config.window * pdcs
     if not isinstance(budget, int) or not pdcs <= budget <= pdcs * 32640:
         raise ValueError("each PDC must receive 1..32640 PSN slots")
     policy = policy or RecoveryPolicy()
     port = SharedPort()
     for index in range(pdcs):
+        # 按整包分条带，最后一个条带扣掉尾部填充，保证有效字节总量不变。
         n = packets // pdcs + int(index < packets % pdcs)
         part_bytes = n * config.payload_bytes
         if index == pdcs - 1:
@@ -257,6 +278,7 @@ def simulate_port(config: TransportConfig, size_bytes: int, seed: int = 1,
     port.run(config)
     # Drain any already reserved final serialization, including redundant copies.
     duration = max(port.now, port.tx_free)
+    # 只把唯一消息大小计入分子；重传、冗余和协议头全部体现在时间及线速字节中。
     stats = {key: sum(c.stats[key] for c in port.connections) for key in port.connections[0].stats}
     goodput = size_bytes * 8 / duration / config.bandwidth_gbps * 100
     result = dict(duration_ns=duration, receiver_complete_ns=max(c.rx_complete for c in port.connections),
@@ -291,6 +313,7 @@ def window_plan(config: TransportConfig, bdp_multiplier: float, memory_mib: int 
     if bdp_multiplier <= 0 or memory_mib <= 0 or max_pdcs < 1:
         raise ValueError("resource limits must be positive")
     bdp = config.bandwidth_gbps * config.rtt_us * 1000 / (8 * (config.payload_bytes + config.overhead_bytes))
+    # 长 RTT 增大 BDP；窗口同时受内存预算、连接数和每连接 PSN 跨度约束。
     budget = min(math.ceil(bdp_multiplier * bdp), memory_mib * 2**20 // config.payload_bytes,
                  max_pdcs * 32640)
     return math.ceil(budget / 32640), budget

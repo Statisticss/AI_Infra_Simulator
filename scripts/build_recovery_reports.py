@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Render reports from completed 002/003 trials; never synthesizes measurements."""
+# 读取已完成的实验 002/003 汇总与 manifest，输出报告及图表，不在此重新运行协议。
 from __future__ import annotations
 
 import argparse
@@ -29,6 +30,7 @@ def table(headers, rows):
 
 
 def ci(row, key="goodput_pct"):
+    # 表中的 ± 是跨独立种子均值的 95% 置信区间半宽，不是标准差。
     return f"{row[key]:.2f} ± {row[key+'_ci95']:.2f}"
 
 
@@ -41,6 +43,7 @@ def savefig(fig, directory, name):
 
 
 def load(name, base):
+    # 只把摘要、运行信息、选参结果等小型文件放入仓库，逐流大数据留在输出目录。
     source, target = base / name, ROOT / "reports" / name
     summary = pd.read_csv(source / "summary.csv")
     metadata = json.loads((source / "manifest.json").read_text())
@@ -55,6 +58,7 @@ def load(name, base):
 
 
 def cipu(base):
+    # 展示消息大小、AllReduce 和突发丢包边界，候选结果不等同于厂商芯片实测。
     s, meta, target, figures = load("002_cipu_inspired", base)
     lossy = s[s.data_loss == .05]
     fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.2))
@@ -163,6 +167,7 @@ AllReduce 是通信专用的分步 Ring，不含计算和 NCCL 流水，也未�
 
 
 def wan(base):
+    # 并列展示 RTT×丢包矩阵、窗口/恢复消融及长流和 collective 对照。
     s, meta, target, figures = load("003_scale_across", base)
     chosen = meta["selection"]
     matrix = s[s.group == "wan_matrix"]

@@ -1,3 +1,4 @@
+# 端点扩展验证：多 PDC 共用带宽、尾部副本仍计费、资源边界及随机流独立。
 from dataclasses import replace
 
 import pytest
@@ -34,6 +35,7 @@ def test_stripes_share_one_serializer_and_conserve_partial_payload(pdcs, mode):
 
 
 def test_copies_pay_bytes_and_both_can_be_lost():
+    # 故意让首次发送和最初副本连续丢失，确认后续恢复仍能完成且字节全计入。
     c = TransportConfig(data_loss=0, ack_loss=0, path_spread_us=0, rto_factor=1.5)
     # Last original and both initial repairs vanish; next repair round must run.
     r = simulate_port(c, 32 * 4096, policy=RecoveryPolicy(tail_copies=2),

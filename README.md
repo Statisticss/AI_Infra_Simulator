@@ -7,6 +7,21 @@
 Scale-across（长距离 RDMA），以及 PCIe、CXL 等总线传输。
 当前实现范围见下表；其余协议尚未实现。
 
+## 版本与结果对应关系
+
+| 版本 | 内容 | 使用方式 |
+|---|---|---|
+| [sim-004-results](https://github.com/Statisticss/AI_Infra_Simulator/tree/sim-004-results)（提交 `4807b56`） | 已验证的仿真代码、报告、图表、36 个任务的完整压缩原始结果 | 对已有结果做严格源码审计，或复现原始结果 |
+| [sim-004-zh-comments](https://github.com/Statisticss/AI_Infra_Simulator/tree/sim-004-zh-comments) | 为全部 Python 文件补充中文注释，并更新本 README | 阅读实现、继续研究、在新输出目录运行实验 |
+
+中文注释版保留原始实验参数、依赖锁和全部已发表结果。23 个 Python 文件与结果版进行了
+抽象语法树及去注释后的 token 比对，可执行代码一致；已有 59 项测试通过。
+协议状态机、定时器、随机种子、带宽计量及验收规则均与结果版相同。
+
+源码摘要按文件原始字节计算，**新增注释也会改变 SHA-256**。
+已有 `manifest.json`、`freeze.json` 和检查点继续记录实际运行时的原始摘要；
+历史结果使用结果版审计，注释版使用新输出目录。下面分别给出命令。
+
 ## 已完成实验
 
 | 编号 | 问题 | 模型与状态 |
@@ -55,57 +70,79 @@ python --version
 python -m pytest -q
 ```
 
-运行完整实验（默认结果写入仓库同级 `results/001_loss_recovery/`）：
+### 用中文注释版运行实验 004
+
+完整矩阵包含 10 次主场景验证和 26 次对照，本机约需 6 分钟。
+使用独立目录保存注释版的新结果，避免与原始源码摘要混用：
 
 ```bash
-OPENBLAS_NUM_THREADS=1 python run_experiment.py --workers 4
-python scripts/build_loss_report.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python run_datacenter_study.py \
+  --output ../results/004_datacenter_90pct_zh --workers 4
+python scripts/verify_datacenter_results.py --input ../results/004_datacenter_90pct_zh
 ```
 
-完整实验在初次运行的本机上约需 4 分钟，机器与系统负载不同会影响耗时。
-运行器会检查 Python 版本，拒绝使用非 3.10 环境。
-
-可以先运行更小的实验组：
+运行器会检查 Python 版本，拒绝非 3.10 环境。
+同一源码、配置、任务范围及 Python 版本下，加 `--resume` 可续跑。
+小型试跑可以只运行 5 个并发消息传输样本：
 
 ```bash
-python run_experiment.py --groups window --output ../results/001_window --workers 4
+OPENBLAS_NUM_THREADS=1 python run_datacenter_study.py --groups permutation \
+  --output ../results/004_permutation_zh --workers 2
 ```
 
-也可选择 `main`、`loss_sweep`、`recovery`、`mtu`、`wan_window`、`controls`。
-加 `--resume` 可恢复同一源码与配置下已完成的任务；源码变化时应使用新结果目录。
-结果包含 `trials.csv`、`summary.csv`、图表、运行元数据与逐流 JSON 检查点。
+`--groups` 还支持 `acceptance`、`lossless_reference`、`baseline_recovery`、
+`medium_tensor`、`small_tensor`、`higher_rtt`。单组输出使用独立目录；
+`verify_datacenter_results.py` 审核的是配置中的完整矩阵，不接受缺少其他组的部分结果。
+只有主场景组参与 90% 目标验收，对照组不达标不会被剔除。
 
-新增实验 002 / 003 分别运行；003 必须先用训练种子选参，再用独立种子评估：
+完整运行后，若需要根据新结果重新发布报告：
 
 ```bash
-OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/002_cipu_inspired.yaml --output ../results/002_cipu_inspired --workers 4
-OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/003_scale_across.yaml --output ../results/003_scale_across --phase tune --workers 4
-OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/003_scale_across.yaml --output ../results/003_scale_across --phase eval --workers 4
-python scripts/verify_recovery_results.py
-python scripts/build_recovery_reports.py
+python scripts/build_datacenter_report.py --input ../results/004_datacenter_90pct_zh
 ```
 
-003 的评估组包括 `wan_matrix`、`wan_window_only`、`wan_long_flow`、`wan_allreduce`、
-`wan_path_skew`、`wan_burst`，可通过 `--groups` 选择，并为局部实验使用独立的输出目录。
-评估目录须先包含对应源码/搜索配置的 `selection.json`（先在该目录运行 `--phase tune`）。
-`--resume` 只复用严格匹配的检查点。完整批量实验可能需数分钟至数十分钟，取决于机器与并发。
-小型汇总、置信区间、全部候选得分和 PNG/SVG 科研图随代码保存。
+该命令更新 `reports/004_datacenter_90pct/` 内的报告、图表和归档。
+本次中文注释提交保留了结果版原有报告，没有重新生成或改写测量记录。
 
-实验 004 固定参数后执行 10 次主场景验证及 26 次对照，本机完整运行约 6 分钟：
+### 直接审计已经发表的结果
+
+报告目录附带约 324 KiB 的 `raw_trials.jsonl.gz`，无需重跑仿真即可检查全部样本。
+在已经激活 Python 3.10 环境的仓库根目录执行以下命令，建立结果版的独立检出目录：
 
 ```bash
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python run_datacenter_study.py --workers 4
-python scripts/verify_datacenter_results.py
-python scripts/build_datacenter_report.py
+git fetch origin --tags
+git worktree add --detach ../AI_Infra_Simulator-results sim-004-results
+python ../AI_Infra_Simulator-results/scripts/verify_datacenter_results.py \
+  --input ../AI_Infra_Simulator-results/reports/004_datacenter_90pct
 ```
 
-原始结果默认写入 `../results/004_datacenter_90pct/`。加 `--resume` 可恢复严格匹配的运行；
-单场景可用 `--groups acceptance --output ../results/004_acceptance_only`。
-报告目录附带约 324 KiB 的全部 trial 压缩账本，下载后可直接审计而无需再运行仿真：
+如果该检出目录已经存在，直接执行最后一条审计命令即可。
+审计核验全部任务、源码摘要、每个包的接收与确认状态、字节守恒、端口容量、CSV 和置信区间。
+不要将旧记录中的摘要替换为当前摘要来绕过检查；只改注释后的摘要不匹配是正常的来源保护。
+
+### 运行实验 001–003
+
+001 比较 GBN 和选择性恢复，可运行完整矩阵或用 `--groups window` 等组名缩小范围：
 
 ```bash
-python scripts/verify_datacenter_results.py --input reports/004_datacenter_90pct
+OPENBLAS_NUM_THREADS=1 python run_experiment.py --output ../results/001_loss_recovery_zh --workers 4
+python scripts/build_loss_report.py --input ../results/001_loss_recovery_zh --output ../results/001_loss_recovery_zh/report
 ```
+
+002 评估 CIPU 公开方向启发的端点恢复候选；003 必须先用训练种子选参，再用独立种子评估：
+
+```bash
+OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/002_cipu_inspired.yaml \
+  --output ../results/002_cipu_inspired_zh --workers 4
+OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/003_scale_across.yaml \
+  --output ../results/003_scale_across_zh --phase tune --workers 4
+OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/003_scale_across.yaml \
+  --output ../results/003_scale_across_zh --phase eval --workers 4
+```
+
+输出包含 `trials.csv`、`summary.csv`、`manifest.json` 和逐流检查点。
+003 的 `selection.json` 与源码和搜索配置绑定；修改参数或注释后应在新目录重新选参。
+001–003 的历史报告及专用审计按原报告的目录约定使用，对应精确源码提交 `f59f05c`。
 
 Notebook 使用：
 
@@ -142,6 +179,53 @@ pyproject.toml / uv.lock             # Python 3.10 环境与依赖
 模型参考 UET 规范、IRN 论文与 HPCC 的 ns-3 实现，具体对应关系及简化见实验方法文档。
 环境同时提供 SimPy、NumPy、SciPy、pandas、Matplotlib、NetworkX、PyYAML、pytest 和 JupyterLab，
 后续独立任务可以选择合适的建模工具。
+
+## 中文代码阅读指南
+
+建议先阅读实验 004 的完整调用链，再回看底座和早期实验：
+
+1. [配置](configs/004_datacenter_90pct.yaml)：明确业务大小、网络参数、恢复策略和种子。
+2. [运行器](src/ai_infra_simulator/experiments/datacenter_study.py)：`expand_jobs` 展开任务，`run_job` 执行一次仿真，`summarize` 和 `acceptance` 汇总验收。
+3. [共享网络](src/ai_infra_simulator/datacenter.py)：`Fabric` 管理持续事件时钟与阶段，`NIC` 负责发送/接收排队，`FabricConnection` 把协议接到物理资源。
+4. [恢复策略](src/ai_infra_simulator/advanced_transport.py)：`PortConnection` 实现重叠 SACK、区间补充反馈和尾部副本。
+5. [协议底座](src/ai_infra_simulator/transport.py)：`PacketSimulation` 实现发包、信道丢失、接收、确认和超时；`TransportConfig` 定义参数和单位。
+6. [审计脚本](scripts/verify_datacenter_results.py)及[测试](tests/test_datacenter.py)：理解每个字节、时延和资源上限如何核验。
+
+一次包传输的主要调用顺序是：
+
+```text
+Fabric.start_phase → 连接请求发送 → NIC.send → 信道判定丢失/到达
+→ 对端 NIC.receive_frame/finish_receive → 连接更新接收位图
+→ ACK 快照进入对端发送队列 → 原发送端收到 ACK 并更新确认状态
+→ 继续发送/重传 → 本阶段全部 rank 确认后启动下一阶段
+```
+
+注释特别说明了以下容易混淆的量：
+
+| 名称 | 含义与单位 |
+|---|---|
+| PSN、`next_seq` | 报文序号、下一份尚未首次发送的报文序号 |
+| `expected` / `cack` / `base` | 接收端实际首个缺口 / 已报告连续确认前缀 / 发送端合并正确认后的连续前缀 |
+| SACK | 选择确认位图；只合并正确认，零位不撤销已经确认的包 |
+| BDP、`window_bdp` | 带宽时延积及其窗口倍率；窗口限制的是 PSN 跨度 |
+| `now`、`tx_free`、`rx_free` | 当前事件时间、发送资源释放时间、接收资源释放时间，单位 ns |
+| `rtt_us`、`ack_delay_us` | 名义 RTT、ACK 合并等待，输入单位 us |
+| `bandwidth_gbps` | 端口 MAC 服务速率，单位 Gbit/s；1 bit/ns = 1 Gbit/s |
+| `data_loss`、`ack_loss` | 每次发送尝试的丢失概率；重传和反馈自身也可能丢失 |
+| `tail_copies` | 每轮尾部修复总副本数，包含该轮第一次重传，不是整条流的复制次数 |
+| `duration_ms` / `wall_seconds` | 模拟的完整通信时间 / Python 程序实际执行耗时，不能混用 |
+
+对于 N 个 rank、每 rank 张量大小 S 的 Ring AllReduce：
+
+```text
+必要网络字节/rank = S × 2(N−1)/N
+algorithm bandwidth = S × 8 / 完成时间
+bus bandwidth = 必要网络字节/rank × 8 / 完成时间
+Goodput = bus bandwidth / 端口速率
+```
+
+重传、ACK 和协议头不增加 Goodput 分子，但全部消耗时间及物理带宽。
+实验 004 的验收要求至少 10 个独立样本，每次都 ≥90%，且均值 95% 置信区间下界也 ≥90%。
 
 ## 实验约定
 

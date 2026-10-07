@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build study 004 report from audited raw trials, including a portable archive."""
+# 报告生成与仿真分离：先审计全部原始结果，再生成图表、中文报告和可移植压缩包。
 from __future__ import annotations
 
 import argparse
@@ -35,6 +36,7 @@ def table(headers, rows):
 
 
 def savefig(fig, directory, name):
+    # 同时保存屏幕查看用 PNG 和矢量 SVG；去掉 SVG 时间信息以减少无意义差异。
     fig.savefig(directory/f"{name}.png", dpi=180, bbox_inches="tight")
     output = directory/f"{name}.svg"
     fig.savefig(output, bbox_inches="tight", metadata={"Date": None})
@@ -49,6 +51,7 @@ def main():
     if sys.version_info[:2] != (3, 10):
         raise SystemExit("Use Python 3.10")
     audit = verify(args.input, ROOT/"configs/004_datacenter_90pct.yaml")
+    # 审计失败即停止，不发布来源不匹配或未完成的试验结果。
     target = ROOT/"reports/004_datacenter_90pct"
     figures = target/"figures"
     figures.mkdir(parents=True, exist_ok=True)
@@ -59,6 +62,7 @@ def main():
     # Read before opening the destination, so the committed archive is also a
     # valid --input for re-rendering without rerunning the simulation.
     results = sorted(read_results(args.input), key=lambda r: r["job"]["job_id"])
+    # 固定任务排序和 gzip 时间戳，原始样本不变时归档内容可稳定复现。
     with (target/"raw_trials.jsonl.gz").open("wb") as stream:
         with gzip.GzipFile(filename="", mode="wb", fileobj=stream, mtime=0) as archive:
             for result in results:
@@ -103,6 +107,8 @@ def main():
 
     # Fractions of aggregate port capacity, recomputed separately for every trial.
     factor = 8/(main_trials.duration_ms*1e6*400*8)*100
+    # 容量预算的分母是 8 个 400G 端口 × 完整时长，先逐 trial 计算再求均值。
+    # 五项分别是唯一载荷、冗余载荷、数据头部、ACK 和空闲，总和必须为 100%。
     parts = {
         "Unique network payload": main_trials.goodput_pct.mean(),
         "Repair / duplicate payload": ((main_trials.data_transmissions-main_trials.packets)*4096*factor).mean(),

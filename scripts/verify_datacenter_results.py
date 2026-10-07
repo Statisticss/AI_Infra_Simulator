@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Recompute study 004 coverage, timing, bytes, port budgets and acceptance."""
+# 实验 004 严格审计：校验原始源码摘要并由逐流/逐 NIC 账本重新推导汇总结果。
+# 若只增加注释，原始字节摘要仍会变化；历史归档请使用 sim-004-results 标签下的代码审计。
 from __future__ import annotations
 
 import argparse
@@ -20,10 +22,12 @@ from ai_infra_simulator.experiments.datacenter_study import acceptance, expand_j
 
 
 def close(a, b):
+    # 时间和速率包含浮点运算，使用小数值容差；包数、字节数仍作精确整数比较。
     assert math.isclose(a, b, rel_tol=1e-10, abs_tol=1e-6), (a, b)
 
 
 def read_results(directory):
+    # 同时支持本地逐任务 JSON 和随 GitHub 报告发布的压缩 JSONL 全量归档。
     if (directory/"jobs").is_dir():
         return [json.loads(p.read_text()) for p in sorted((directory/"jobs").glob("*.json"))]
     with gzip.open(directory/"raw_trials.jsonl.gz", "rt") as f:
@@ -36,6 +40,7 @@ def verify(directory, config):
     manifest = json.loads((directory/"manifest.json").read_text())
     freeze = json.loads((directory/"freeze.json").read_text())
     digest = source_hash()
+    # 保留严格来源校验，不能为通过审计而替换历史 manifest 中的摘要。
     assert manifest["source_sha256"] == freeze["source_sha256"] == digest
     assert manifest["config_sha256"] == hashlib.sha256(raw).hexdigest()
     assert manifest["document"] == freeze["document"] == document
@@ -45,6 +50,7 @@ def verify(directory, config):
     assert len(results) == len(expected) == manifest["jobs"]
     assert {r["job"]["job_id"] for r in results} == set(expected)
     assert sorted(expected) == freeze["selected_job_ids"]
+    # 任务数量、编号集合和冻结任务集都要一致，避免漏掉低性能样本。
     total_flows = total_packets = total_attempts = total_acks = total_events = 0
     for result in results:
         job, m, nics, flows = (result[k] for k in ("job", "metrics", "nics", "flows"))
@@ -60,6 +66,7 @@ def verify(directory, config):
         assert len({f["seed"] for f in flows}) == len(flows)
         duration = m["duration_ms"]*1e6
         phase_end = 0.
+        # 逐阶段核对接收完成、发送端确认和全局屏障，保证没有把阶段时间重叠或重置。
         for phase, dt in enumerate(result["phase_durations_ns"]):
             current = [f for f in flows if f["phase"] == phase]
             assert all(phase_end < f["receiver_complete_ns"] <= f["completion_ns"] <= duration for f in current)
@@ -68,6 +75,7 @@ def verify(directory, config):
         close(phase_end, m["final_confirmation_ms"]*1e6)
         assert phase_end <= duration
         for f in flows:
+            # 每条逻辑流都必须收齐并确认所有唯一包；重传只增加线速成本。
             assert f["seed"] == flow_seed(job["seed"], f["phase"], f["rank"])
             assert f["destination"] == (f["rank"]+1) % ranks
             assert f["payload_bytes"] == chunk
@@ -83,6 +91,7 @@ def verify(directory, config):
                     "forward_wire_bytes", "reverse_wire_bytes", "packets"):
             assert sum(f[key] for f in flows) == m[key]
         for nic in nics:
+            # 数据归发送 rank；ACK 归生成反馈的接收 rank。两者在同一个 TX 预算内。
             assert nic["data_tx_bytes"] == sum(f["forward_wire_bytes"] for f in flows if f["rank"] == nic["rank"])
             assert nic["ack_tx_bytes"] == sum(f["reverse_wire_bytes"] for f in flows if f["destination"] == nic["rank"])
             tx = nic["data_tx_bytes"]+nic["ack_tx_bytes"]
@@ -107,6 +116,7 @@ def verify(directory, config):
         total_acks += m["ack_transmissions"]
         total_events += m["event_count"]
     trials, summary = summarize(results)
+    # 从原始账本重新生成 CSV 与验收结论，不能只信任已保存的平均值。
     for name, frame in (("trials", trials), ("summary", summary)):
         pd.testing.assert_frame_equal(pd.read_csv(directory/f"{name}.csv").reset_index(drop=True),
                                       frame.reset_index(drop=True), check_dtype=False, check_like=True,

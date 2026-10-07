@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run the independent loss-recovery experiment using the local Python 3.10 env."""
+# 实验 001 命令行入口；将本地 src 加入导入路径，无需安装项目包即可运行。
 from pathlib import Path
 import sys
 

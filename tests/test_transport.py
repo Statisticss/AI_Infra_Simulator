@@ -1,3 +1,4 @@
+# 底座协议验证：解析时延、GBN 后缀丢弃、SACK 正确认、反馈丢失和无预知恢复。
 from dataclasses import replace
 import math
 
@@ -68,6 +69,7 @@ def test_spraying_reorders_without_retransmitting_lossless_data():
 
 
 def test_zero_sack_bits_never_revoke_prior_acks():
+    # 较旧位图中的零位不能撤销较新反馈已经确认的数据。
     sim = PacketSimulation(clean(), 128 * 4096)
     sim.receive_feedback(0, 5, 0, 1 << 5, None)
     sim.receive_feedback(0, 6, 0, 0, None)
@@ -83,6 +85,7 @@ def test_sender_has_no_oracle_for_tail_loss():
 
 
 def test_physical_loss_never_creates_trim_notification():
+    # 故障擦除后没有可转发包头，不能凭空触发 Trim 快速通知。
     result = simulate_flow(clean(data_loss=0.05), 8192 * 4096, seed=45)
     assert result.physical_drops > 0
     assert result.trim_events == result.nack_transmissions == 0

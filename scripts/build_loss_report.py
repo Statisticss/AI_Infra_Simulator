@@ -1,4 +1,5 @@
 """Build the checked-in experiment report from completed local result files."""
+# 实验 001 报告生成器：读取汇总 CSV，分别展示线速 Goodput 和相对无损保留率。
 
 import argparse
 import json
@@ -17,6 +18,7 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("reports/001_loss_recovery"))
     args = parser.parse_args()
     summary = pd.read_csv(args.input / "summary.csv")
+    # 报告数值全部来自已运行的样本；本脚本不生成新的仿真结果。
     manifest = json.loads((args.input / "manifest.json").read_text())
     main_rows = summary[(summary.group == "main") & (summary.data_loss == 0.05)]
     scenarios = main_rows.sort_values(["rtt_us", "size_mib"]).experiment.drop_duplicates()

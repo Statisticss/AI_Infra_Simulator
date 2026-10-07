@@ -1,5 +1,6 @@
 """Configuration-driven runner. No networking or compilation is used by simulations."""
 
+# 实验 001 运行器：读取 YAML 参数扫描，执行分组仿真，汇总统计并生成图表。
 from __future__ import annotations
 
 import argparse
@@ -24,6 +25,7 @@ from ai_infra_simulator.transport import TransportConfig
 
 
 def source_hash() -> str:
+    # 001–003 对整个模型包的 Python 文件取原始字节摘要；注释和新增模块也会改变它。
     root = Path(__file__).resolve().parents[1]
     digest = hashlib.sha256()
     for file in sorted(root.rglob("*.py")):
@@ -33,6 +35,7 @@ def source_hash() -> str:
 
 
 def expand_jobs(document: dict) -> list[dict]:
+    # 用笛卡尔积展开扫描轴，生成完整配置和稳定任务编号，便于恢复及审计。
     jobs = []
     for experiment in document["experiments"]:
         config = dict(document["transport_defaults"])
@@ -47,6 +50,7 @@ def expand_jobs(document: dict) -> list[dict]:
                 current["ack_loss"] = current["data_loss"]
             transport = TransportConfig(**current)
             is_zero = transport.data_loss == transport.ack_loss == transport.trim_probability == 0
+            # 无损且路径确定时只运行一次；随机有损条件使用全部指定种子。
             seeds = [document["seeds"][0]] if is_zero else document["seeds"]
             for seed in seeds:
                 job = {"experiment": experiment["id"], "group": experiment["group"],
@@ -58,6 +62,7 @@ def expand_jobs(document: dict) -> list[dict]:
 
 
 def run_job(job: dict) -> dict:
+    # MiB 转换为真实字节数后执行，Python 运行耗时与模拟通信时延分开记录。
     started = perf_counter()
     result = simulate_workload(TransportConfig(**job["transport"]),
                                round(job["size_mib"] * 1024**2), job["seed"],
@@ -67,6 +72,7 @@ def run_job(job: dict) -> dict:
 
 
 def summarize(results: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # 统计组键包含协议、时延、窗口等全部关键条件，避免把不同配置混成一个均值。
     rows = []
     for result in results:
         job = result["job"]
@@ -96,6 +102,7 @@ def summarize(results: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
         summary.append(entry)
     aggregate = pd.DataFrame(summary)
     raw["retained_vs_zero_pct"] = float("nan")
+    # 相对无损保留率另算；不能把“保留无损性能的 90%”称作“线速 Goodput 90%”。
     aggregate["retained_vs_zero_pct"] = float("nan")
     baseline_keys = ["experiment", "protocol", "rtt_us", "size_mib", "payload_bytes", "window_packets",
                      "early_recovery", "loss_model", "path_spread_us"]
@@ -113,6 +120,7 @@ def summarize(results: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def plot_results(summary: pd.DataFrame, output: Path):
+    # 图表只读取已完成试验的汇总数据，不用理论公式补齐未运行的样本。
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -242,6 +250,7 @@ def main(argv=None):
         job = result["job"]
         destination = checkpoints / (job["job_id"] + ".json")
         temporary = destination.with_suffix(".tmp")
+        # 先写临时文件再替换，减少中断时留下半份检查点的风险。
         temporary.write_text(json.dumps(result, indent=2) + "\n")
         temporary.replace(destination)
         results.append(result)

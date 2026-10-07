@@ -1,3 +1,4 @@
+# 004 网络模型验证：物理端口共享、有限 RX 队列、跨阶段时钟及逐字节预算。
 from dataclasses import replace
 import math
 
@@ -13,6 +14,7 @@ def lossless(**kwargs):
 
 
 def test_single_packet_per_rank_matches_two_serializers_per_direction():
+    # 数据与返回 ACK 各经历 TX、RX 两次服务，解析式用于校验单位和时延计量。
     c = lossless()
     r = simulate_datacenter(c, 4096, ranks=4, workload="permutation")
     # Forward: TX then RX; return ACK: TX then RX. Propagation adds one RTT.
@@ -24,6 +26,7 @@ def test_single_packet_per_rank_matches_two_serializers_per_direction():
 
 
 def test_data_and_control_never_overlap_on_a_physical_tx_port():
+    # 逐帧检查发送时间线，防止数据和 ACK 各自虚占一条满速链路。
     c = lossless(ack_every=1)
     r = simulate_datacenter(c, 256*4096, ranks=4, workload="permutation", trace=True)
     for trace, nic in zip(r["nic_traces"], r["nics"]):
@@ -56,6 +59,7 @@ def test_ingress_fifo_is_finite_rate_and_bounded():
 
 
 def test_ring_keeps_global_clock_and_nic_state_between_all_phases():
+    # 新阶段不能把 NIC 或事件时钟归零；还需核验 Ring 的必要网络流量系数。
     c = lossless()
     r = simulate_datacenter(c, 2**18, ranks=4, trace=True)
     m = r["metrics"]
@@ -73,6 +77,7 @@ def test_ring_keeps_global_clock_and_nic_state_between_all_phases():
 
 
 def test_tail_and_redundant_repair_losses_recover_without_an_oracle():
+    # 同时注入尾包、副本和 ACK 丢失，发送端必须靠反馈或计时器恢复。
     c = lossless(early_factor=1.1, rto_factor=1.25)
     r = simulate_datacenter(c, 32*4096, ranks=2, workload="permutation", trace=True,
                             data_drop_hook=lambda seq, attempt: seq == 31 and attempt <= 4,
