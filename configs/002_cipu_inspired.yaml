@@ -1,0 +1,34 @@
+# Candidate endpoint strategy, not a proprietary CIPU implementation.
+seeds: [11, 29, 47, 71, 101]
+resources: {memory_mib: 2048, max_pdcs: 64}
+transport:
+  protocol: uet
+  bandwidth_gbps: 400
+  payload_bytes: 4096
+  overhead_bytes: 128
+  ack_bytes: 96
+  ack_every: 4
+  ack_delay_us: 0.5
+  window_bdp: 8
+  path_count: 4
+  path_spread_us: 2
+experiments:
+  - id: cipu_bulk
+    workload: bulk
+    size_mib: [32, 128, 1024]
+    rtt_us: [10]
+    data_loss: [0, 0.05]
+    strategies: [uet, cipu_candidate]
+  - id: cipu_allreduce
+    workload: ring_allreduce
+    size_mib: [32, 256, 1024]
+    rtt_us: [10]
+    data_loss: [0, 0.05]
+    strategies: [uet, cipu_candidate]
+  - id: cipu_burst
+    workload: bulk
+    size_mib: [128]
+    rtt_us: [10]
+    data_loss: [0.05]
+    strategies: [uet, cipu_candidate]
+    transport: {loss_model: burst, burst_length: 8}

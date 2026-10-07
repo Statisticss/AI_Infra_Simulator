@@ -12,6 +12,13 @@ Scale-across（长距离 RDMA），以及 PCIe、CXL 等总线传输。
 | 编号 | 问题 | 模型与状态 |
 |---|---|---|
 | 001 | 5% 故障丢包下，GBN 与选择性重传的 Goodput 差别有多大？能否达到 90%？ | 分组级传输 + 分步 Ring AllReduce；192 个任务、5 个有损随机种子，结果和参数已保存 |
+| 002 | 根据 CIPU 2.0 的公开方向设计可达 90% 的候选策略 | 重叠 SACK、区间反馈、尾部冗余；Bulk 与 8 rank Ring，详见独立报告 |
+| 003 | RTT 1–10 ms 下不同丢包率的性能与优化 | 共享 400 Gbit/s 端口的多个 PDC、2 GiB 窗口预算、独立选参与评估、资源消融 |
+
+**[实验 002：CIPU 启发策略](reports/002_cipu_inspired/REPORT.md)** ·
+[CIPU 公开资料分析](reports/002_cipu_inspired/RESEARCH.md) ·
+**[实验 003：Scale-across](reports/003_scale_across/REPORT.md)** ·
+[新增模型的方法与局限](reports/003_scale_across/METHOD.md)
 
 **[阅读实验 001 报告](reports/001_loss_recovery/REPORT.md)** ·
 [模型假设与原始依据](reports/001_loss_recovery/METHOD.md) ·
@@ -57,6 +64,22 @@ python run_experiment.py --groups window --output ../results/001_window --worker
 加 `--resume` 可恢复同一源码与配置下已完成的任务；源码变化时应使用新结果目录。
 结果包含 `trials.csv`、`summary.csv`、图表、运行元数据与逐流 JSON 检查点。
 
+新增实验 002 / 003 分别运行；003 必须先用训练种子选参，再用独立种子评估：
+
+```bash
+OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/002_cipu_inspired.yaml --output ../results/002_cipu_inspired --workers 4
+OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/003_scale_across.yaml --output ../results/003_scale_across --phase tune --workers 4
+OPENBLAS_NUM_THREADS=1 python run_recovery_study.py --config configs/003_scale_across.yaml --output ../results/003_scale_across --phase eval --workers 4
+python scripts/verify_recovery_results.py
+python scripts/build_recovery_reports.py
+```
+
+003 的评估组包括 `wan_matrix`、`wan_window_only`、`wan_long_flow`、`wan_allreduce`、
+`wan_path_skew`、`wan_burst`，可通过 `--groups` 选择，并为局部实验使用独立的输出目录。
+评估目录须先包含对应源码/搜索配置的 `selection.json`（先在该目录运行 `--phase tune`）。
+`--resume` 只复用严格匹配的检查点。完整批量实验可能需数分钟至数十分钟，取决于机器与并发。
+小型汇总、置信区间、全部候选得分和 PNG/SVG 科研图随代码保存。
+
 Notebook 使用：
 
 ```bash
@@ -70,11 +93,16 @@ configs/001_loss_recovery.yaml        # 参数矩阵、随机种子
 src/ai_infra_simulator/
   transport.py                       # 传输、故障、反馈、重传、事件内核
   collectives.py                     # 通信量和 Ring 步骤依赖
+  advanced_transport.py              # 共享端口、多 PDC、反馈与尾部候选策略
   experiments/loss_recovery.py        # 批量运行、统计、绘图
+  experiments/recovery_study.py       # 002/003 选参、独立评估及逐流保存
 tests/                               # 解析边界与协议状态验证
 scripts/build_loss_report.py         # 从结果生成报告
+scripts/build_recovery_reports.py    # 002/003 报告与科学图
+scripts/verify_recovery_results.py   # 完整任务集、来源、字节及状态预算核验
 reports/001_loss_recovery/            # 可分享的报告、统计表与图
 run_experiment.py                    # 无需安装本项目包的入口
+run_recovery_study.py                # 002/003 入口
 pyproject.toml / uv.lock             # Python 3.10 环境与依赖
 ```
 

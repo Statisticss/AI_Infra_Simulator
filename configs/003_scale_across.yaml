@@ -1,0 +1,62 @@
+seeds: [11, 29, 47, 71, 101]
+resources: {memory_mib: 2048, max_pdcs: 64}
+transport:
+  protocol: uet
+  bandwidth_gbps: 400
+  payload_bytes: 4096
+  overhead_bytes: 128
+  ack_bytes: 96
+  ack_every: 4
+  ack_delay_us: 0.5
+  window_bdp: 8
+  path_count: 4
+  path_spread_us: 2
+tuning:
+  # Fixed before held-out runs. Search never reads evaluation seeds.
+  window_bdp: [2, 4, 8]
+  tail_copies: [1, 2, 3]
+  rtt_us: [1000, 10000]
+  data_loss: [0.05]
+  size_mib: 1024
+  seeds: [3, 7]
+experiments:
+  - id: wan_matrix
+    workload: bulk
+    size_mib: [1024]
+    rtt_us: [1000, 2000, 5000, 10000]
+    data_loss: [0, 0.001, 0.01, 0.03, 0.05, 0.10]
+    strategies: [uet, coverage_fixed, optimized]
+  - id: wan_window_only
+    workload: bulk
+    size_mib: [1024]
+    rtt_us: [1000, 10000]
+    data_loss: [0.05]
+    strategies: [window_only]
+  - id: wan_long_flow
+    workload: bulk
+    size_mib: [4096]
+    rtt_us: [1000, 5000, 10000]
+    data_loss: [0.05]
+    strategies: [optimized]
+    seeds: [11, 29, 47]
+  - id: wan_allreduce
+    workload: ring_allreduce
+    size_mib: [1024]
+    rtt_us: [1000, 10000]
+    data_loss: [0.05]
+    strategies: [uet, optimized]
+    seeds: [11, 29, 47]
+  - id: wan_path_skew
+    workload: bulk
+    size_mib: [1024]
+    rtt_us: [1000]
+    data_loss: [0.05]
+    strategies: [uet, optimized]
+    transport: {path_spread_us: 100}
+  - id: wan_burst
+    workload: bulk
+    size_mib: [1024]
+    rtt_us: [1000]
+    data_loss: [0.05]
+    strategies: [uet, optimized]
+    transport: {loss_model: burst, burst_length: 8}

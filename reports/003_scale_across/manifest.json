@@ -1,0 +1,99 @@
+{
+  "python": "3.10.19",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "phase": "eval",
+  "source_sha256": "d81ff60116339582320397c419d1e14ced2e0ff4c8d0e476f481395b099133af",
+  "config_sha256": "b2c0dac94633172350049c6b0fa77b213da9b4d224dbd949c79e4b3b4b45d64b",
+  "git_head": "3304fd3503e3f0066caec82aec8664fb55717f79",
+  "worktree_dirty": true,
+  "jobs": 363,
+  "reused": 0,
+  "wall_seconds": 917.4234157909996,
+  "selection": {
+    "window_bdp": 8,
+    "tail_copies": 3,
+    "score": 63.96169228090244,
+    "average_window_mib": 1208.955078125,
+    "ranking": [
+      {
+        "window_bdp": 8,
+        "tail_copies": 3,
+        "score": 63.96169228090244,
+        "average_window_mib": 1208.955078125
+      },
+      {
+        "window_bdp": 4,
+        "tail_copies": 3,
+        "score": 60.467982929097445,
+        "average_window_mib": 1017.25390625
+      },
+      {
+        "window_bdp": 8,
+        "tail_copies": 2,
+        "score": 57.378376823627036,
+        "average_window_mib": 1208.955078125
+      },
+      {
+        "window_bdp": 4,
+        "tail_copies": 2,
+        "score": 55.9194448541617,
+        "average_window_mib": 1017.25390625
+      },
+      {
+        "window_bdp": 8,
+        "tail_copies": 1,
+        "score": 49.74057432767331,
+        "average_window_mib": 1208.955078125
+      },
+      {
+        "window_bdp": 4,
+        "tail_copies": 1,
+        "score": 46.777085648140314,
+        "average_window_mib": 1017.25390625
+      },
+      {
+        "window_bdp": 2,
+        "tail_copies": 3,
+        "score": 37.99393896164132,
+        "average_window_mib": 508.62890625
+      },
+      {
+        "window_bdp": 2,
+        "tail_copies": 2,
+        "score": 36.29471233341888,
+        "average_window_mib": 508.62890625
+      },
+      {
+        "window_bdp": 2,
+        "tail_copies": 1,
+        "score": 32.89772491984314,
+        "average_window_mib": 508.62890625
+      }
+    ],
+    "objective": "geometric mean full-transfer goodput; 1% tie favors memory then copies",
+    "training_seeds": [
+      3,
+      7
+    ],
+    "evaluation_seeds": [
+      11,
+      29,
+      47,
+      71,
+      101
+    ],
+    "search_config_sha256": "f22e3b5a152b90afdeedcd6e7d476e2d2fd207028d079676b535ce618f134a82",
+    "source_sha256": "d81ff60116339582320397c419d1e14ced2e0ff4c8d0e476f481395b099133af"
+  },
+  "training_seeds": [
+    3,
+    7
+  ],
+  "evaluation_seeds": [
+    11,
+    29,
+    47,
+    71,
+    101
+  ]
+}

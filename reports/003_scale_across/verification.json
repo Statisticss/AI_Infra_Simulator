@@ -1,0 +1,8 @@
+{
+  "study": "003_scale_across",
+  "jobs": 399,
+  "flows": 1731,
+  "data_transmissions": 168679955,
+  "source_sha256": "d81ff60116339582320397c419d1e14ced2e0ff4c8d0e476f481395b099133af",
+  "checks": "PASS"
+}
